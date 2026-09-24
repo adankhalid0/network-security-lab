@@ -1,0 +1,17 @@
+# Example WireGuard server config for remote access into the mgmt VLAN.
+# Rename to wg0.conf and replace the placeholder keys before use.
+# Generate keys with: wg genkey | tee privatekey | wg pubkey > publickey
+
+[Interface]
+Address = 172.20.99.2/24
+ListenPort = 51820
+PrivateKey = <SERVER_PRIVATE_KEY>
+# Allow the tunnel to route into the management VLAN only, mirroring the
+# same east-west segmentation enforced by firewall/nftables.conf.
+PostUp = iptables -A FORWARD -i %i -o eth0 -j ACCEPT
+PostDown = iptables -D FORWARD -i %i -o eth0 -j ACCEPT
+
+[Peer]
+# Admin laptop
+PublicKey = <CLIENT_PUBLIC_KEY>
+AllowedIPs = 172.20.99.100/32

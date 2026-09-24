@@ -1,0 +1,14 @@
+# Example WireGuard client config for an admin laptop connecting into
+# the mgmt VLAN of the lab from outside. Rename to wg0.conf and replace
+# the placeholder keys and endpoint before use.
+
+[Interface]
+Address = 172.20.99.100/24
+PrivateKey = <CLIENT_PRIVATE_KEY>
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = <SERVER_PUBLIC_KEY>
+Endpoint = <SERVER_PUBLIC_IP>:51820
+AllowedIPs = 172.20.99.0/24
+PersistentKeepalive = 25

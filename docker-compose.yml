@@ -1,0 +1,83 @@
+# Network Security Lab
+# Simulates a segmented company network with three VLAN-style zones:
+#   vlan10_corp  (172.20.10.0/24) - corporate workstations/servers
+#   vlan20_guest (172.20.20.0/24) - isolated guest network
+#   vlan99_mgmt  (172.20.99.0/24) - management/monitoring network
+#
+# The "firewall" container sits between all three networks and enforces
+# segmentation with nftables. The "monitor" container (on the mgmt network)
+# scans and logs activity on the other segments, similar to how a network
+# engineer would monitor a real segmented LAN.
+
+networks:
+  vlan10_corp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.10.0/24
+  vlan20_guest:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.20.0/24
+  vlan99_mgmt:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.99.0/24
+
+services:
+  firewall:
+    build: ./firewall
+    container_name: firewall
+    cap_add:
+      - NET_ADMIN
+    networks:
+      vlan10_corp:
+        ipv4_address: 172.20.10.1
+      vlan20_guest:
+        ipv4_address: 172.20.20.1
+      vlan99_mgmt:
+        ipv4_address: 172.20.99.1
+    restart: unless-stopped
+
+  corp-host:
+    build: ./hosts
+    container_name: corp-host
+    networks:
+      vlan10_corp:
+        ipv4_address: 172.20.10.10
+    depends_on:
+      - firewall
+
+  corp-server:
+    build: ./hosts
+    container_name: corp-server
+    networks:
+      vlan10_corp:
+        ipv4_address: 172.20.10.20
+    depends_on:
+      - firewall
+
+  guest-host:
+    build: ./hosts
+    container_name: guest-host
+    networks:
+      vlan20_guest:
+        ipv4_address: 172.20.20.10
+    depends_on:
+      - firewall
+
+  monitor:
+    build: ./monitor
+    container_name: monitor
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      vlan99_mgmt:
+        ipv4_address: 172.20.99.10
+    volumes:
+      - ./monitor/logs:/var/log/monitor
+    depends_on:
+      - firewall
