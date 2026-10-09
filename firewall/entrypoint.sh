@@ -4,7 +4,7 @@ set -e
 # Enable IP forwarding so this container can route between the three
 # attached Docker networks, the same role a router/L3 switch plays
 # between VLANs on real hardware.
-sysctl -w net.ipv4.ip_forward=1
+echo "ip_forward = $(cat /proc/sys/net/ipv4/ip_forward) (set by docker-compose sysctls)"
 
 # Load the segmentation ruleset
 nft -f /etc/nftables.conf

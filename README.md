@@ -1,49 +1,78 @@
 # Network Security Lab
 
-A small Docker-based network project that simulates a segmented enterprise network. It demonstrates, in practice, how to split a network into zones, control traffic between them with a firewall, and monitor what's happening — exactly the kind of work a network engineer or IT support professional deals with day to day.
+[![CI](https://github.com/adankhalid0/network-security-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/adankhalid0/network-security-lab/actions/workflows/ci.yml)
 
-A voluntary side project I built on my own, independent of my studies.
+A small Docker-based network project that simulates a segmented enterprise network. It shows, in practice, how to split a network into zones, control traffic between them with a firewall, and monitor what is happening. This is the kind of work a network engineer or IT support professional does day to day.
 
-What the project does
+It is a voluntary side project that I built on my own, independent of my studies.
 
-Three zones are set up using Docker, functioning the same way VLANs do on a real switch:
+## What the project does
 
-vlan10_corp (172.20.10.0/24) — regular workstations and servers
-vlan20_guest (172.20.20.0/24) — an isolated guest network
-vlan99_mgmt (172.20.99.0/24) — network for administration and monitoring
+Three zones are set up with Docker. They work the same way VLANs do on a real switch:
 
-A firewall container controls traffic between the zones using nftables. The rules are simple: the management zone can reach the other two zones, workstations can send logs to the monitoring server, but the guest network is completely isolated and cannot reach any of the other zones. Everything that gets blocked is also logged. See the actual rules in firewall/nftables.conf and a simple network map in docs/network-diagram.md.
+| Zone | Subnet | Purpose |
+|------|--------|---------|
+| `vlan10_corp` | 172.20.10.0/24 | Workstations and servers |
+| `vlan20_guest` | 172.20.20.0/24 | Isolated guest network |
+| `vlan99_mgmt` | 172.20.99.0/24 | Administration and monitoring |
 
-The management zone hosts a monitoring server with two small Python tools I wrote myself:
+A firewall container routes between the zones and controls traffic with **nftables**. The rules are simple:
 
-port_scanner.py — checks which ports are actually open on a host or an entire network. Used to confirm that the isolation works, i.e. that the guest network genuinely cannot reach the workstations.
-traffic_logger.py — listens to network traffic and logs what's happening (source, destination, and port), similar to a simple monitoring sensor.
+- The management zone can reach the other two zones.
+- Workstations can send syslog (UDP 514) to the monitoring server.
+- The guest network is isolated and cannot reach any other zone.
+- Everything that is blocked is counted and logged.
 
-The project also includes an example WireGuard setup (wireguard/), demonstrating how to configure secure remote access into the management zone.
+The hosts get a route to the other zones through the firewall (`172.20.X.1`), the same job a default gateway has on a real VLAN. See the rules in [`firewall/nftables.conf`](firewall/nftables.conf) and a simple network map in [`docs/network-diagram.md`](docs/network-diagram.md).
 
-How to run it
+The management zone has a monitoring server with two small Python tools that I wrote:
 
-You need Docker and Docker Compose installed.
+- `port_scanner.py` checks which ports are open on a host or a whole subnet. I use it to confirm that the isolation works.
+- `traffic_logger.py` listens to network traffic and logs source, destination and protocol, like a simple monitoring sensor.
 
-bash
+The project also has an example WireGuard setup in [`wireguard/`](wireguard/) that shows how secure remote access into the management zone can be configured.
+
+## How to run it
+
+You need Docker and Docker Compose.
+
+```bash
 docker compose up --build -d
+bash scripts/test.sh
+```
 
-Then test that the isolation actually works:
+`scripts/test.sh` runs all the isolation checks and prints PASS or FAIL for each. You can also test by hand:
 
-bash
-docker compose exec monitor python3 port_scanner.py 172.20.10.0/24
-docker compose exec guest-host nc -zv 172.20.10.10 22   # should fail, guest is isolated
-docker compose exec corp-host nc -zv 172.20.10.20 80    # should succeed, same zone
+```bash
+docker compose exec monitor python port_scanner.py 172.20.10.10 172.20.10.20 172.20.20.10 --timeout 1
+docker compose exec guest-host ping -c 2 -W 1 172.20.10.20      # should fail, guest is isolated
+docker compose exec monitor ping -c 2 -W 1 172.20.10.20         # should succeed, management can reach corp
+docker compose exec firewall nft list ruleset                   # shows the rules and how many packets each one dropped
+docker compose exec monitor python traffic_logger.py --count 12
+```
 
-Watch traffic and blocked attempts live:
+## Results
 
-bash
-docker compose logs -f firewall
-docker compose exec monitor python3 traffic_logger.py --count 50
-Why I built this
+The isolation is tested on every push with GitHub Actions (`scripts/test.sh`). These are the results from my own runs.
 
-I built this project because I wanted to showcase this side of me — my practical, curious interest in networking and security. It's been valuable to demonstrate this skill set in a way that's both an engaging hobby project and executed at a professional level, with real segmentation, firewall rules I can explain in detail, and monitoring tools I wrote myself.
+**Firewall rules and counters.** Management is allowed into corp and guest. Traffic from guest to corp, guest to management and corp to guest is dropped, and each rule counts the packets it dropped.
 
-Tools used
+![Firewall rules with packet counters](docs/images/01-firewall-counters.png)
 
-Docker and Docker Compose, nftables, Python 3 (scapy, socket), WireGuard.
+**Port scan from the management zone.** The monitoring server finds ports 22 and 80 open on all three hosts, so management can see into both zones.
+
+![Port scan from the monitor container](docs/images/02-port-scan.png)
+
+**Traffic log.** The traffic logger on the monitoring server captures traffic between management and the corp server.
+
+![Traffic logger output](docs/images/03-traffic-log.png)
+
+## What I learned
+
+- A container does not route between networks on its own. The firewall needs IP forwarding turned on, and each host needs a route to the other zones through it. Without the routes, the traffic never reached the firewall, even though the firewall rules were correct.
+- Docker uses the first address in each subnet (`.1`) as its own gateway. To give that address to the firewall, I moved Docker's gateway to `.254`.
+- Counters on the drop rules are a good way to prove that the firewall is doing its job. The kernel log is not always visible from inside a container, but the counters are.
+
+## Tools used
+
+Docker and Docker Compose, nftables, Python 3 (scapy, socket), WireGuard, GitHub Actions.
