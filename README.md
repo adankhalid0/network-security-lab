@@ -4,11 +4,11 @@
 
 A small Docker-based network project that simulates a segmented enterprise network. It shows, in practice, how to split a network into zones, control traffic between them with a firewall, and monitor what is happening. This is the kind of work a network engineer or IT support professional does day to day.
 
-It is a voluntary side project that I built on my own, independent of my studies.
+It is a voluntary side project that I built on my own.
 
 ## What the project does
 
-Three zones are set up with Docker. They work the same way VLANs do on a real switch:
+Three zones are set up with Docker. They are modelled on VLAN-style segments (separate networks with a firewall between them), not real VLANs on a switch:
 
 | Zone | Subnet | Purpose |
 |------|--------|---------|
@@ -21,7 +21,7 @@ A firewall container routes between the zones and controls traffic with **nftabl
 - The management zone can reach the other two zones.
 - Workstations can send syslog (UDP 514) to the monitoring server.
 - The guest network is isolated and cannot reach any other zone.
-- Everything that is blocked is counted and logged.
+- Everything that is blocked is counted. The counters are always available; the kernel log is not always visible from inside a container.
 
 The hosts get a route to the other zones through the firewall (`172.20.X.1`), the same job a default gateway has on a real VLAN. See the rules in [`firewall/nftables.conf`](firewall/nftables.conf) and a simple network map in [`docs/network-diagram.md`](docs/network-diagram.md).
 
@@ -49,6 +49,12 @@ docker compose exec guest-host ping -c 2 -W 1 172.20.10.20      # should fail, g
 docker compose exec monitor ping -c 2 -W 1 172.20.10.20         # should succeed, management can reach corp
 docker compose exec firewall nft list ruleset                   # shows the rules and how many packets each one dropped
 docker compose exec monitor python traffic_logger.py --count 12
+```
+
+When you are done, stop and remove the containers and networks:
+
+```bash
+docker compose down
 ```
 
 ## Results
